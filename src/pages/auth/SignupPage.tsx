@@ -71,7 +71,7 @@ export default function SignupPage() {
                         type="text"
                         value={form.name}
                         onChange={(v) => setForm((f) => ({ ...f, name: v }))}
-                        placeholder="Shubham Jadhav"
+                        placeholder="Alice Johnson"
                     />
 
                     {/* Organisation */}
@@ -81,7 +81,7 @@ export default function SignupPage() {
                         type="text"
                         value={form.organizationName}
                         onChange={(v) => setForm((f) => ({ ...f, organizationName: v }))}
-                        placeholder="NDSoftTech Solutions"
+                        placeholder="Askora Inc."
                     />
 
                     {/* Email */}
@@ -91,7 +91,7 @@ export default function SignupPage() {
                         type="email"
                         value={form.email}
                         onChange={(v) => setForm((f) => ({ ...f, email: v }))}
-                        placeholder="shubham.jadhav@ndsofttech.com"
+                        placeholder="alice.johnson@askora.com"
                     />
 
                     {/* DB name preview */}
