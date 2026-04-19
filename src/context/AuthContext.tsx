@@ -4,12 +4,13 @@ import {
     useState,
     useEffect,
     useCallback,
+    useRef,
     ReactNode,
 } from 'react'
 import { User, AuthState } from '../types'
-import { authApi, beamsApi } from '../services/api'
+import { authApi, beamsApi, storage } from '../services/api'
 import { connectSocket, disconnectSocket } from '../services/socket'
-import { initBeams, stopBeams } from '../services/beams'
+import { initBeams, stopBeams, requestNotificationPermission } from '../services/beams'
 
 interface AuthContextType extends AuthState {
     login: (email: string, password: string) => Promise<void>
@@ -24,47 +25,49 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-// ── Side-effects after a successful auth ──────────────────────────────────────
-// Connects socket and initialises Beams. Neither failure is fatal.
-const setupRealtime = async (token: string, userId: string): Promise<void> => {
+// ── Setup real-time (socket + pusher) ─────────────────────────────────────────
+const setupRealtime = async (token: string): Promise<void> => {
     // 1. Socket
     connectSocket(token)
 
-    // 2. Pusher Beams (best-effort)
+    // 2. Request notification permission proactively
+    await requestNotificationPermission()
+
+    // 3. Pusher Channels
     try {
+        console.log('🔔 [SETUP] Setting up Pusher Channels notifications...')
         const beamsRes = await beamsApi.getAuth()
         const { interests } = beamsRes.data.data as {
             beamsUserId: string
             interests: string[]
         }
+        console.log('📬 [SETUP] Pusher interests received:', interests)
+
+        // Use VITE_PUSHER_KEY — the Channels app key, NOT the Beams instance ID
         await initBeams({
-            instanceId: import.meta.env.VITE_PUSHER_BEAMS_INSTANCE_ID || '',
+            instanceId: import.meta.env.VITE_PUSHER_KEY || '',
             interests,
         })
-    } catch {
-        // Non-fatal — app works without push notifications
-        console.warn('Beams setup skipped:', userId)
+        console.log('✅ [SETUP] Pusher Channels initialized — real-time notifications active')
+    } catch (err) {
+        console.warn('⚠️ [SETUP] Pusher setup warning:', err instanceof Error ? err.message : String(err))
     }
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [state, setState] = useState<AuthState>({
-        token: localStorage.getItem('askora_token'),
-        user: (() => {
-            try {
-                return JSON.parse(localStorage.getItem('askora_user') || 'null')
-            } catch {
-                return null
-            }
-        })(),
-        isAuthenticated: !!localStorage.getItem('askora_token'),
+        token: storage.getAccessToken(),
+        user: storage.getUser(),
+        isAuthenticated: !!storage.getAccessToken(),
         isLoading: true,
     })
 
-    // Validate stored token on mount
+    // Guard against StrictMode double-setup
+    const realtimeSetupDone = useRef(false)
+
     useEffect(() => {
-        const token = localStorage.getItem('askora_token')
+        const token = storage.getAccessToken()
         if (!token) {
             setState((prev) => ({ ...prev, isLoading: false }))
             return
@@ -74,60 +77,65 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             .getMe()
             .then((res) => {
                 const user: User = res.data.data.user
-                localStorage.setItem('askora_user', JSON.stringify(user))
+                storage.setUser(user)
                 setState({ token, user, isAuthenticated: true, isLoading: false })
-                setupRealtime(token, user.id)
+
+                // Only set up realtime once (guard against StrictMode double-invoke)
+                if (!realtimeSetupDone.current) {
+                    realtimeSetupDone.current = true
+                    setupRealtime(token)
+                }
             })
             .catch(() => {
-                // Token invalid/expired — clean up
-                localStorage.removeItem('askora_token')
-                localStorage.removeItem('askora_user')
+                storage.clear()
                 setState({ token: null, user: null, isAuthenticated: false, isLoading: false })
             })
+
+        return () => {
+            // StrictMode cleanup — reset the guard so second mount can proceed
+            realtimeSetupDone.current = false
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    const persistAuth = useCallback((token: string, user: User) => {
-        localStorage.setItem('askora_token', token)
-        localStorage.setItem('askora_user', JSON.stringify(user))
+    const persistAuth = useCallback((token: string, refreshToken: string, user: User) => {
+        storage.setTokens(token, refreshToken)
+        storage.setUser(user)
         setState({ token, user, isAuthenticated: true, isLoading: false })
     }, [])
 
     const login = useCallback(
         async (email: string, password: string) => {
             const res = await authApi.login({ email, password })
-            const { token, user } = res.data.data as { token: string; user: User }
-            persistAuth(token, user)
-            setupRealtime(token, user.id)
+            const { token, refreshToken, user } = res.data.data as {
+                token: string; refreshToken: string; user: User
+            }
+            persistAuth(token, refreshToken, user)
+            realtimeSetupDone.current = true
+            setupRealtime(token)
         },
         [persistAuth]
     )
 
     const signup = useCallback(
-        async (
-            name: string,
-            email: string,
-            password: string,
-            organizationName: string
-        ) => {
+        async (name: string, email: string, password: string, organizationName: string) => {
             const res = await authApi.signup({ name, email, password, organizationName })
-            const { token, user } = res.data.data as { token: string; user: User }
-            persistAuth(token, user)
-            setupRealtime(token, user.id)
+            const { token, refreshToken, user } = res.data.data as {
+                token: string; refreshToken: string; user: User
+            }
+            persistAuth(token, refreshToken, user)
+            realtimeSetupDone.current = true
+            setupRealtime(token)
         },
         [persistAuth]
     )
 
     const logout = useCallback(async () => {
-        try {
-            await authApi.logout()
-        } catch {
-            // Ignore — we always clear local state
-        }
-        localStorage.removeItem('askora_token')
-        localStorage.removeItem('askora_user')
+        try { await authApi.logout() } catch { /* ignore */ }
+        storage.clear()
         disconnectSocket()
         await stopBeams()
+        realtimeSetupDone.current = false
         setState({ token: null, user: null, isAuthenticated: false, isLoading: false })
     }, [])
 

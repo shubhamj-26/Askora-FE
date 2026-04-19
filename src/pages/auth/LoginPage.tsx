@@ -83,14 +83,19 @@ export default function LoginPage() {
                         </div>
                     </div>
 
-                    <button type="submit" disabled={loading} style={{ ...s.submitBtn, opacity: loading ? 0.7 : 1 }}>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        style={{ ...s.submitBtn, opacity: loading ? 0.7 : 1 }}
+                    >
                         {loading ? <span style={s.spinner} /> : 'Sign In'}
                     </button>
                 </form>
 
+                {/* Fixed: "Create workspace or Organisation" */}
                 <p style={s.footer}>
                     Don't have an account?{' '}
-                    <Link to="/signup">Create workspace</Link>
+                    <Link to="/signup">Create Organization or Workspace</Link>
                 </p>
             </div>
         </div>
@@ -99,44 +104,27 @@ export default function LoginPage() {
 
 const s: Record<string, React.CSSProperties> = {
     page: {
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-        position: 'relative',
-        overflow: 'hidden',
-        background: 'var(--bg-primary)',
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '24px', position: 'relative', overflow: 'hidden', background: 'var(--bg-primary)',
     },
     orb1: {
-        position: 'fixed',
-        top: '-15%', left: '-10%',
-        width: '500px', height: '500px',
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 70%)',
+        position: 'fixed', top: '-15%', left: '-10%', width: '500px', height: '500px',
+        borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 70%)',
         pointerEvents: 'none',
     },
     orb2: {
-        position: 'fixed',
-        bottom: '-15%', right: '-10%',
-        width: '600px', height: '600px',
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(168,85,247,0.08) 0%, transparent 70%)',
+        position: 'fixed', bottom: '-15%', right: '-10%', width: '600px', height: '600px',
+        borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.08) 0%, transparent 70%)',
         pointerEvents: 'none',
     },
     card: {
-        width: '100%',
-        maxWidth: '420px',
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-xl)',
-        padding: '40px',
-        boxShadow: 'var(--shadow-lg)',
+        width: '100%', maxWidth: '420px', background: 'var(--bg-card)',
+        border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)',
+        padding: '40px', boxShadow: 'var(--shadow-lg)',
     },
     logo: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '28px' },
     logoIcon: {
-        width: '36px', height: '36px', borderRadius: '10px',
-        background: 'var(--gradient)',
+        width: '36px', height: '36px', borderRadius: '10px', background: 'var(--gradient)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
     },
     logoText: { fontFamily: 'Syne, sans-serif', fontSize: '20px', fontWeight: 800 },
@@ -150,28 +138,23 @@ const s: Record<string, React.CSSProperties> = {
     },
     inputWrap: { position: 'relative' },
     input: {
-        width: '100%', padding: '11px 16px',
-        background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-        fontSize: '14px', outline: 'none',
+        width: '100%', padding: '11px 16px', background: 'var(--bg-elevated)',
+        border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+        color: 'var(--text-primary)', fontSize: '14px', outline: 'none',
     },
     eyeBtn: {
         position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
-        background: 'none', border: 'none', color: 'var(--text-secondary)',
-        display: 'flex', alignItems: 'center',
+        background: 'none', border: 'none', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center',
     },
     submitBtn: {
-        marginTop: '8px', padding: '13px',
-        background: 'var(--gradient)', border: 'none',
-        borderRadius: 'var(--radius-sm)', color: '#fff',
+        marginTop: '8px', padding: '13px', background: 'var(--gradient)',
+        border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff',
         fontFamily: 'Syne, sans-serif', fontSize: '15px', fontWeight: 700,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        transition: 'opacity 0.2s',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity 0.2s',
     },
     spinner: {
-        width: '18px', height: '18px',
-        border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff',
-        borderRadius: '50%', animation: 'spin 0.8s linear infinite', display: 'inline-block',
+        width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.3)',
+        borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite', display: 'inline-block',
     },
     footer: { marginTop: '24px', textAlign: 'center', fontSize: '14px', color: 'var(--text-secondary)' },
 }
