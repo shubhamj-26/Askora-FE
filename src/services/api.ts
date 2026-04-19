@@ -1,30 +1,107 @@
-import axios from 'axios'
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5842/api'
 
-const api = axios.create({
+const api: AxiosInstance = axios.create({
     baseURL: API_URL,
     headers: { 'Content-Type': 'application/json' },
 })
 
-// Attach JWT token on every request
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('askora_token')
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`
-    }
+// ── Storage helpers ───────────────────────────────────────────────────────────
+export const storage = {
+    getAccessToken: () => localStorage.getItem('askora_access_token'),
+    getRefreshToken: () => localStorage.getItem('askora_refresh_token'),
+    setTokens: (access: string, refresh: string) => {
+        localStorage.setItem('askora_access_token', access)
+        localStorage.setItem('askora_refresh_token', refresh)
+    },
+    setUser: (user: unknown) =>
+        localStorage.setItem('askora_user', JSON.stringify(user)),
+    getUser: () => {
+        try {
+            return JSON.parse(localStorage.getItem('askora_user') || 'null')
+        } catch {
+            return null
+        }
+    },
+    clear: () => {
+        localStorage.removeItem('askora_access_token')
+        localStorage.removeItem('askora_refresh_token')
+        localStorage.removeItem('askora_user')
+    },
+}
+
+let isRefreshing = false
+let failedQueue: Array<{
+    resolve: (value: string) => void
+    reject: (reason: unknown) => void
+}> = []
+
+const processQueue = (error: unknown, token: string | null = null) => {
+    failedQueue.forEach((prom) => {
+        if (error) prom.reject(error)
+        else prom.resolve(token as string)
+    })
+    failedQueue = []
+}
+
+// ── Request interceptor: attach access token ──────────────────────────────────
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    const token = storage.getAccessToken()
+    if (token) config.headers.Authorization = `Bearer ${token}`
     return config
 })
 
-// On 401 → clear storage and redirect to login
+// ── Response interceptor: silent token refresh on 401 ────────────────────────
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
-        if (error.response?.status === 401) {
-            localStorage.removeItem('askora_token')
-            localStorage.removeItem('askora_user')
-            window.location.href = '/login'
+    async (error) => {
+        const original = error.config
+
+        const isAuthEndpoint =
+            original?.url?.includes('/auth/login') ||
+            original?.url?.includes('/auth/signup') ||
+            original?.url?.includes('/auth/refresh')
+
+        if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
+            if (isRefreshing) {
+                return new Promise((resolve, reject) => {
+                    failedQueue.push({ resolve, reject })
+                })
+                    .then((token) => {
+                        original.headers.Authorization = `Bearer ${token}`
+                        return api(original)
+                    })
+                    .catch((err) => Promise.reject(err))
+            }
+
+            original._retry = true
+            isRefreshing = true
+
+            const refreshToken = storage.getRefreshToken()
+            if (!refreshToken) {
+                storage.clear()
+                window.location.href = '/login'
+                return Promise.reject(error)
+            }
+
+            try {
+                const res = await axios.post(`${API_URL}/auth/refresh`, { refreshToken })
+                const { accessToken, refreshToken: newRefresh } = res.data.data
+                storage.setTokens(accessToken, newRefresh)
+                processQueue(null, accessToken)
+                original.headers.Authorization = `Bearer ${accessToken}`
+                return api(original)
+            } catch (refreshError) {
+                processQueue(refreshError, null)
+                storage.clear()
+                window.location.href = '/login'
+                return Promise.reject(refreshError)
+            } finally {
+                isRefreshing = false
+            }
         }
+
         return Promise.reject(error)
     }
 )
@@ -41,81 +118,85 @@ export const authApi = {
     login: (data: { email: string; password: string }) =>
         api.post('/auth/login', data),
 
+    refresh: (refreshToken: string) =>
+        api.post('/auth/refresh', { refreshToken }),
+
     logout: () => api.post('/auth/logout'),
 
-    // GET /auth/me  →  { success, data: { user } }
     getMe: () => api.get('/auth/me'),
 }
 
 // ── Users (admin only) ────────────────────────────────────────────────────────
 export const usersApi = {
-    // GET /users  →  { success, data: { users } }
     getAll: () => api.get('/users'),
 
-    // POST /users  →  { success, data: { user } }
     add: (data: { name: string; email: string; password: string; role?: string }) =>
         api.post('/users', data),
 
-    // PUT /users/:id
-    update: (
-        id: string,
-        data: Partial<{ name: string; isActive: boolean; role: string }>
-    ) => api.put(`/users/${id}`, data),
+    update: (id: string, data: Partial<{ name: string; email: string; isActive: boolean; role: string }>) =>
+        api.put(`/users/${id}`, data),
 
-    // DELETE /users/:id
     delete: (id: string) => api.delete(`/users/${id}`),
 }
 
 // ── Questions ─────────────────────────────────────────────────────────────────
 export const questionsApi = {
-    // GET /questions  →  { success, data: { questions } }
     getAll: () => api.get('/questions'),
 
-    // GET /questions/:id  →  { success, data: { question } }
     getOne: (id: string) => api.get(`/questions/${id}`),
 
-    // GET /questions/:id/stats  →  { success, data: { question, totalResponses, stats } }
     getStats: (id: string) => api.get(`/questions/${id}/stats`),
 
-    // POST /questions  →  { success, data: { question } }
     create: (data: { text: string; options: { text: string }[] }) =>
         api.post('/questions', data),
 
-    // PUT /questions/:id
     update: (
         id: string,
-        data: Partial<{
-            text: string
-            options: { text: string }[]
-            isActive: boolean
-        }>
+        data: Partial<{ text: string; options: { text: string }[]; isActive: boolean }>
     ) => api.put(`/questions/${id}`, data),
 
-    // DELETE /questions/:id
     delete: (id: string) => api.delete(`/questions/${id}`),
 }
 
 // ── Responses ─────────────────────────────────────────────────────────────────
 export const responsesApi = {
-    // GET /responses  (admin only)  →  { success, data: { responses } }
     getAll: () => api.get('/responses'),
 
-    // POST /responses  →  { success, data: { response } }
     submit: (data: { questionId: string; selectedOptionId: string }) =>
         api.post('/responses', data),
 
-    // GET /responses/question/:questionId  (admin only)  →  { success, data: { responses } }
     getForQuestion: (questionId: string) =>
         api.get(`/responses/question/${questionId}`),
 
-    // GET /responses/my/:questionId  →  { success, data: { response } }  (null if not answered)
     getMyResponse: (questionId: string) =>
         api.get(`/responses/my/${questionId}`),
+
+    update: (responseId: string, data: { selectedOptionId: string }) =>
+        api.put(`/responses/${responseId}`, data),
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+export const chatApi = {
+    // Team chat
+    getMessages: (params?: { limit?: number; before?: string }) =>
+        api.get('/chat', { params }),
+
+    sendMessage: (message: string) => api.post('/chat', { message }),
+
+    markRead: (senderId?: string) => api.post('/chat/read', senderId ? { senderId } : {}),
+
+    // Personal chat
+    getPersonalMessages: (receiverId: string, params?: { limit?: number; before?: string }) =>
+        api.get(`/chat/personal/${receiverId}`, { params }),
+
+    sendPersonalMessage: (receiverId: string, message: string) =>
+        api.post('/chat/personal', { receiverId, message }),
+
+    getUnreadCounts: () => api.get('/chat/unread-counts'),
 }
 
 // ── Beams ─────────────────────────────────────────────────────────────────────
 export const beamsApi = {
-    // GET /beams/auth  →  { success, data: { beamsUserId, interests, ... } }
     getAuth: () => api.get('/beams/auth'),
 }
 

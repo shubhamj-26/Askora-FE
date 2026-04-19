@@ -3,31 +3,30 @@ import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/common/ProtectedRoute'
 
-// Auth pages
+// Auth
 import SignupPage from './pages/auth/SignupPage'
 import LoginPage from './pages/auth/LoginPage'
 
-// Dashboard pages
+// Dashboard
 import DashboardLayout from './pages/dashboard/DashboardLayout'
 import DashboardHome from './pages/dashboard/DashboardHome'
 import QuestionsPage from './pages/dashboard/QuestionsPage'
 import UsersPage from './pages/dashboard/UsersPage'
 import AnalyticsPage from './pages/dashboard/AnalyticsPage'
 import ResponsesPage from './pages/dashboard/ResponsesPage'
+import ChatPage from './pages/dashboard/ChatPage'
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public routes */}
+          {/* Public */}
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/login" element={<LoginPage />} />
-
-          {/* Root → redirect to login */}
           <Route path="/" element={<Navigate to="/login" replace />} />
 
-          {/* Protected dashboard */}
+          {/* Protected */}
           <Route
             path="/dashboard"
             element={
@@ -36,33 +35,19 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            {/* Index route */}
             <Route index element={<DashboardHome />} />
-
-            {/* Available to all authenticated users */}
             <Route path="questions" element={<QuestionsPage />} />
             <Route path="responses" element={<ResponsesPage />} />
+            <Route path="chat" element={<ChatPage />} />
 
-            {/* Admin-only routes */}
-            <Route
-              path="users"
-              element={
-                <ProtectedRoute adminOnly>
-                  <UsersPage />
-                </ProtectedRoute>
-              }
+            <Route path="users"
+              element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>}
             />
-            <Route
-              path="analytics"
-              element={
-                <ProtectedRoute adminOnly>
-                  <AnalyticsPage />
-                </ProtectedRoute>
-              }
+            <Route path="analytics"
+              element={<ProtectedRoute adminOnly><AnalyticsPage /></ProtectedRoute>}
             />
           </Route>
 
-          {/* Catch-all */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
