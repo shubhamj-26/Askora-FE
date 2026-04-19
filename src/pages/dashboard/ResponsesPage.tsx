@@ -3,55 +3,56 @@ import { useAuth } from '../../context/AuthContext'
 import { questionsApi, responsesApi } from '../../services/api'
 import { Question, UserResponse } from '../../types'
 import { MessageSquare, CheckCircle } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export default function ResponsesPage() {
     const { user } = useAuth()
     const isAdmin = user?.role === 'admin'
 
     const [loading, setLoading] = useState(true)
-    // For admins: all responses + question map
-    // For users: only their own responses
     const [responses, setResponses] = useState<UserResponse[]>([])
     const [questionMap, setQuestionMap] = useState<Record<string, Question>>({})
 
     const loadData = useCallback(async () => {
         try {
+            // Always fetch all questions first so we can show the question text
+            const qRes = await questionsApi.getAll()
+            const allQuestions: Question[] = qRes.data.data.questions
+            const qMap: Record<string, Question> = {}
+            allQuestions.forEach((q) => { qMap[q._id] = q })
+            setQuestionMap(qMap)
+
             if (isAdmin) {
-                // Admin: GET /responses (all) + GET /questions (to map question text)
-                const [rRes, qRes] = await Promise.all([responsesApi.getAll(), questionsApi.getAll()])
-                const allResponses: UserResponse[] = rRes.data.data.responses
-                const allQuestions: Question[] = qRes.data.data.questions
-
-                const qMap: Record<string, Question> = {}
-                allQuestions.forEach((q) => { qMap[q._id] = q })
-
-                setResponses(allResponses)
-                setQuestionMap(qMap)
+                // Admin: GET /responses — all org responses
+                const rRes = await responsesApi.getAll()
+                const respList = rRes.data.data.responses || []
+                setResponses(respList)
             } else {
-                // Regular user: fetch all questions first, then check their response for each
-                const qRes = await questionsApi.getAll()
-                const allQuestions: Question[] = qRes.data.data.questions
-
-                const qMap: Record<string, Question> = {}
-                allQuestions.forEach((q) => { qMap[q._id] = q })
-                setQuestionMap(qMap)
-
-                // GET /responses/my/:questionId  for each question — returns null if not answered
+                // User: for each question, call GET /responses/my/:questionId
+                // Only collects non-null results (i.e. questions the user answered)
                 const userResponses: UserResponse[] = []
-                await Promise.allSettled(
+                const results = await Promise.allSettled(
                     allQuestions.map(async (q) => {
-                        const r = await responsesApi.getMyResponse(q._id)
-                        if (r.data.data.response) {
-                            userResponses.push(r.data.data.response)
+                        try {
+                            const r = await responsesApi.getMyResponse(q._id)
+                            if (r.data?.data?.response) {
+                                userResponses.push(r.data.data.response)
+                            }
+                        } catch (err) {
+                            // question not answered — skip
+                            console.debug(`No response for question ${q._id}`)
                         }
                     })
                 )
                 // Sort newest first
-                userResponses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                userResponses.sort(
+                    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                )
                 setResponses(userResponses)
             }
-        } catch {
-            // Silent
+        } catch (err) {
+            console.error('ResponsesPage load error:', err)
+            toast.error('Failed to load responses')
         } finally {
             setLoading(false)
         }
@@ -87,7 +88,7 @@ export default function ResponsesPage() {
                     <p style={{ color: 'var(--text-muted)' }}>
                         {isAdmin
                             ? 'No responses submitted yet.'
-                            : "You haven't answered any questions yet. Head to the Questions page!"}
+                            : "You haven't answered any questions yet. Head to the Questions tab!"}
                     </p>
                 </div>
             ) : (
@@ -104,9 +105,14 @@ export default function ResponsesPage() {
                                     <span style={s.date}>{new Date(r.createdAt).toLocaleDateString()}</span>
                                 </div>
 
-                                {/* Question text (from map) */}
+                                {/* Question text */}
                                 <p style={s.qText}>
-                                    {question ? question.text : `Question ID: ${r.questionId}`}
+                                    {question
+                                        ? question.text
+                                        : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                            Question no longer available
+                                        </span>
+                                    }
                                 </p>
 
                                 {/* Answer */}
@@ -157,7 +163,6 @@ const s: Record<string, React.CSSProperties> = {
     empty: {
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
         padding: '80px 20px', background: 'var(--bg-card)',
-        borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border)',
-        textAlign: 'center',
+        borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border)', textAlign: 'center',
     },
 }
